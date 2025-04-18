@@ -8,13 +8,15 @@ variables:
   pythonVersion: '3.10'
   artifactName: 'python-app'
   zipName: 'release1.zip'
-  appFolder: 'src'  # FastAPI app entry is inside src/fastapi_app
+  appFolder: 'src'  # FastAPI app is inside src/fastapi_app
   appName: 'testpython123'
   resourceGroup: 'test-scolas-app'
 
 stages:
 
+# =============================
 # 🔨 BUILD STAGE
+# =============================
 - stage: Build
   jobs:
   - job: BuildJob
@@ -39,7 +41,7 @@ stages:
 
     - script: |
         cd $(appFolder)
-        pip install -r ../requirements.txt  # Adjust path to main requirements.txt
+        pip install -r ../requirements.txt
         pip install uvicorn gunicorn
       displayName: '⬇️ Install dependencies'
 
@@ -55,7 +57,10 @@ stages:
         publishLocation: 'Container'
       displayName: '🚀 Publish ZIP artifact'
 
+
+# =============================
 # 🚀 DEPLOY STAGE
+# =============================
 - stage: Deploy
   dependsOn: Build
   jobs:
@@ -87,9 +92,9 @@ stages:
               azureSubscription: 'azure-arm-coonection'
               appName: '$(appName)'
               resourceGroupName: '$(resourceGroup)'
-              configurationStrings: '-startupFile "python3 -m uvicorn models:app --host 0.0.0.0 --port 8000"'
+              configurationStrings: >
+                -startupFile "bash -c 'pip install -r /home/site/wwwroot/requirements.txt && python3 -m uvicorn fastapi_app.app:app --host 0.0.0.0 --port 8000'"
               appSettings: |
                 {
                   "WEBSITES_PORT": "8000"
                 }
-
