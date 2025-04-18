@@ -65,8 +65,13 @@ stages:
       runOnce:
         deploy:
           steps:
-          - download: current
-            artifact: $(artifactName)
+          - task: DownloadBuildArtifacts@0
+            displayName: '⬇️ Download build artifact'
+            inputs:
+              buildType: 'current'
+              downloadType: 'single'
+              artifactName: '$(artifactName)'
+              downloadPath: '$(Pipeline.Workspace)'
 
           - task: AzureWebApp@1
             displayName: '🚀 Deploy to Azure Web App'
