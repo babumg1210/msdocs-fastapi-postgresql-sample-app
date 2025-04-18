@@ -87,6 +87,9 @@ stages:
               azureSubscription: 'azure-arm-coonection'
               appName: '$(appName)'
               resourceGroupName: '$(resourceGroup)'
-              configurationStrings: '-startupFile "python3 -m uvicorn fastapi_app.main:app --host 0.0.0.0 --port 8000"'
+              configurationStrings: '-startupFile "python3 -m uvicorn models:app --host 0.0.0.0 --port 8000"'
               appSettings: |
-                -WEBSITES_PORT=8000
+                {
+                  "WEBSITES_PORT": "8000"
+                }
+
