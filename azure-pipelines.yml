@@ -1,0 +1,97 @@
+trigger:
+- main  # Or your desired branch
+
+pool:
+  vmImage: ubuntu-latest
+
+variables:
+  pythonVersion: '3.13'
+  artifactName: 'python-app'
+  zipName: 'release1.zip'
+  appFolder: 'scholas-api'  # Adjust if your code lives elsewhere
+
+stages:
+- stage: Build
+  jobs:
+  - job: BuildJob
+    steps:
+    - checkout: self
+
+    - script: |
+        echo "📁 Listing repo contents for debug"
+        ls -al
+      displayName: 'List all files'
+
+    - task: UsePythonVersion@0
+      inputs:
+        versionSpec: '$(pythonVersion)'
+        addToPath: true
+      displayName: 'Set up Python'
+
+    - script: |
+        python -m venv venv
+        source venv/bin/activate
+      displayName: 'Create and activate virtual environment'
+
+    - script: |
+        cd $(appFolder)
+        pip install -r requirements.txt
+        pip install uvicorn
+      displayName: 'Install dependencies and uvicorn'
+
+    - script: |
+        pip freeze
+      displayName: 'Verify installed packages'
+
+    - script: |
+        cd $(appFolder)
+        zip -r ../$(zipName) .
+      displayName: 'Zip app contents'
+
+    - task: PublishBuildArtifacts@1
+      inputs:
+        PathtoPublish: '$(zipName)'
+        ArtifactName: '$(artifactName)'
+        publishLocation: 'Container'
+      displayName: 'Publish artifact for deployment'
+
+- stage: Deploy
+  dependsOn: Build
+  jobs:
+  - deployment: DeployJob
+    environment: 'Production'
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - download: current
+            artifact: $(artifactName)
+
+          - script: |
+              unzip $(zipName)
+            displayName: 'Unzip artifact'
+
+          - task: AzureCLI@2
+            inputs:
+              azureSubscription: '<your-service-connection-name>'  # 🟡 Service connection name
+              scriptType: bash
+              scriptLocation: inlineScript
+              inlineScript: |
+                echo "🔐 Logging in with service principal..."
+                az login --service-principal \
+                  --username ${{ secrets.REGISTRY_USERNAME }} \
+                  --password ${{ secrets.REGISTRY_PASSWORD }} \
+                  --tenant ${{ secrets.TENANT_ID }}
+
+                echo "🚀 Deploying to Azure Web App..."
+                az webapp deployment source config-zip \
+                  --resource-group ScholasUI-RG \
+                  --name scholasapplicationwebdev2 \
+                  --src $(zipName)
+
+                echo "⚙️ Configuring startup command..."
+                az webapp config set \
+                  --name scholasapplicationwebdev2 \
+                  --resource-group ScholasUI-RG \
+                  --startup-file "python3 -m uvicorn School:app --host 0.0.0.0 --port 8000"
+            displayName: 'Login and Deploy with Azure CLI'
