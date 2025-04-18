@@ -8,9 +8,16 @@ variables:
   pythonVersion: '3.13'
   artifactName: 'python-app'
   zipName: 'release1.zip'
-  appFolder: 'scholas-api'  # Adjust if your code lives elsewhere
+  appFolder: 'scholas-api'  # adjust this if your app is in a different folder
+  appName: 'testpython123'
+  resourceGroup: 'test-scolas-app'
 
 stages:
+
+# ==============================
+# 🔨 BUILD STAGE
+# ==============================
+
 - stage: Build
   jobs:
   - job: BuildJob
@@ -22,38 +29,45 @@ stages:
         ls -al
       displayName: 'List all files'
 
+    - script: |
+        if [ ! -f "$(appFolder)/requirements.txt" ]; then
+          echo "❌ requirements.txt not found in $(appFolder)!"
+          exit 1
+        fi
+      displayName: '✅ Check for requirements.txt'
+
     - task: UsePythonVersion@0
       inputs:
         versionSpec: '$(pythonVersion)'
         addToPath: true
-      displayName: 'Set up Python'
+      displayName: '🐍 Set up Python'
 
     - script: |
         python -m venv venv
         source venv/bin/activate
-      displayName: 'Create and activate virtual environment'
+      displayName: '📦 Create and activate virtual environment'
 
     - script: |
         cd $(appFolder)
         pip install -r requirements.txt
         pip install uvicorn
-      displayName: 'Install dependencies and uvicorn'
-
-    - script: |
-        pip freeze
-      displayName: 'Verify installed packages'
+      displayName: '⬇️ Install dependencies and uvicorn'
 
     - script: |
         cd $(appFolder)
-        zip -r ../$(zipName) .
-      displayName: 'Zip app contents'
+        zip -r $(Build.ArtifactStagingDirectory)/$(zipName) .
+      displayName: '📦 Zip app contents'
 
     - task: PublishBuildArtifacts@1
       inputs:
-        PathtoPublish: '$(zipName)'
+        PathtoPublish: '$(Build.ArtifactStagingDirectory)/$(zipName)'
         ArtifactName: '$(artifactName)'
         publishLocation: 'Container'
-      displayName: 'Publish artifact for deployment'
+      displayName: '🚀 Publish ZIP artifact'
+
+# ==============================
+# 🚀 DEPLOY STAGE
+# ==============================
 
 - stage: Deploy
   dependsOn: Build
@@ -67,31 +81,21 @@ stages:
           - download: current
             artifact: $(artifactName)
 
-          - script: |
-              unzip $(zipName)
-            displayName: 'Unzip artifact'
-
-          - task: AzureCLI@2
+          - task: AzureWebApp@1
+            displayName: '🚀 Deploy to Azure Web App'
             inputs:
-              azureSubscription: '<your-service-connection-name>'  # 🟡 Service connection name
-              scriptType: bash
-              scriptLocation: inlineScript
-              inlineScript: |
-                echo "🔐 Logging in with service principal..."
-                az login --service-principal \
-                  --username ${{ secrets.REGISTRY_USERNAME }} \
-                  --password ${{ secrets.REGISTRY_PASSWORD }} \
-                  --tenant ${{ secrets.TENANT_ID }}
+              azureSubscription: 'azure-arm-coonection'
+              appType: 'webAppLinux'  # use 'webApp' if you're on Windows App Service Plan
+              appName: '$(appName)'
+              package: '$(Pipeline.Workspace)/$(artifactName)/$(zipName)'
 
-                echo "🚀 Deploying to Azure Web App..."
-                az webapp deployment source config-zip \
-                  --resource-group ScholasUI-RG \
-                  --name scholasapplicationwebdev2 \
-                  --src $(zipName)
+          - task: AzureAppServiceSettings@1
+            displayName: '⚙️ Set Startup Command'
+            inputs:
+              azureSubscription: 'azure-arm-coonection'
+              appName: '$(appName)'
+              resourceGroupName: '$(resourceGroup)'
+              configurationStrings: '-startupFile "python3 -m uvicorn models:app --host 0.0.0.0 --port 8000"'
+              appSettings: |
+                -WEBSITES_PORT=8000
 
-                echo "⚙️ Configuring startup command..."
-                az webapp config set \
-                  --name scholasapplicationwebdev2 \
-                  --resource-group ScholasUI-RG \
-                  --startup-file "python3 -m uvicorn School:app --host 0.0.0.0 --port 8000"
-            displayName: 'Login and Deploy with Azure CLI'
